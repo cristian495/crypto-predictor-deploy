@@ -72,6 +72,14 @@ docker compose run --rm worker export
 `--rm` = el contenedor se borra al terminar (no deja basura). Cada tarea imprime su
 salida directamente en tu terminal.
 
+**Multi-estrategia:** el worker es genérico. Por defecto corre `buy_the_dip`; para
+otra estrategia del engine pásala con `-e STRATEGY=<nombre>`. Cada una guarda sus
+datos en `/data/<nombre>/` sin colisionar.
+
+```bash
+docker compose run --rm -e STRATEGY=mean_reversion worker scan
+```
+
 ---
 
 ## 4. Programar el horario (cron del VPS) — la clave
