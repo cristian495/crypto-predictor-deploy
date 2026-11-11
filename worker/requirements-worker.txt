@@ -1,0 +1,5 @@
+# Dependencias minimas del worker de señales (sin ML).
+# El worker solo: baja OHLCV/funding (ccxt), evalua señales (pandas/numpy) y alerta (urllib, stdlib).
+ccxt>=4.0
+pandas>=2.0
+numpy>=1.24

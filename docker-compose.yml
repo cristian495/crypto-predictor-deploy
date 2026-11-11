@@ -1,0 +1,40 @@
+# predictor — stack de señales en vivo (paper trading) + UI web.
+# Metodologia calcada de boolend-deploy: aislamiento por COMPOSE_PROJECT_NAME,
+# config propia en .env, nginx en el HOST (la web se publica solo en 127.0.0.1).
+#
+# worker: escanea la cesta, registra señales, alerta Discord y genera los JSON.
+# web:    sirve la UI (Vite) + los JSON desde el volumen COMPARTIDO con el worker.
+#
+# Aislamiento por entorno: el volumen `signaldata` -> `predictor_<env>_signaldata`.
+name: ${COMPOSE_PROJECT_NAME}
+
+services:
+  worker:
+    build: ./worker
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+      ENGINE_DIR: /engine
+      DATA_DIR: /data
+      # Secreto del .env de ESTA carpeta (gitignored). Si falta, el worker registra pero no alerta.
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+    volumes:
+      # El CODIGO del engine, montado READ-ONLY. `make deploy` hace git pull y recrea el worker.
+      - ./repos/engine:/engine:ro
+      # Persistencia del log de señales + resultados + JSON de la UI (sobrevive a redeploys).
+      - signaldata:/data
+
+  web:
+    build: ./repos/ui                 # Dockerfile self-contained de la UI (clonado por bootstrap)
+    restart: unless-stopped
+    volumes:
+      # El MISMO volumen del worker, montado READ-ONLY donde nginx sirve /data.
+      # Asi la UI ve los JSON que genera el worker, siempre frescos.
+      - signaldata:/usr/share/nginx/html/data:ro
+    ports:
+      - "127.0.0.1:${WEB_PORT}:80"    # el Nginx del host -> aqui
+    depends_on:
+      - worker
+
+volumes:
+  signaldata:

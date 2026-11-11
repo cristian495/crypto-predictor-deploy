@@ -1,0 +1,5 @@
+# Secreto del entorno
+.env
+
+# El engine se clona en runtime (no se versiona dentro del deploy repo)
+repos/
