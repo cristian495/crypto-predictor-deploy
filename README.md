@@ -25,8 +25,11 @@ Datos en volumen Docker (`predictor_<env>_signaldata`), sobreviven a redeploys.
 - Docker + Docker Compose v2 (ya lo tienes por BooLend).
 - Git.
 - Webhook de Discord.
-- **Subdominio** (ej. `predictor.tudominio.com`) con su Origin cert de Cloudflare
-  instalado en `/etc/ssl/cloudflare/<dominio>/` (igual que en BooLend).
+- **Subdominio** (ej. `predictor.tudominio.com`) con registro DNS al VPS.
+- **SSL del dominio ya instalado en el host** (infra compartida): el snippet
+  `/etc/nginx/snippets/ssl-<dominio>.conf` + el Origin cert en
+  `/etc/ssl/cloudflare/<dominio>/`. Si ya tienes otro proyecto en ese dominio
+  (p.ej. BooLend), esto ya existe y se reutiliza. bootstrap solo lo verifica.
 - Los **dos repos en GitHub**: engine (ya existe) y UI (crearlo, ver abajo).
 
 ## Antes de desplegar: subir la UI a GitHub (una sola vez)
@@ -59,14 +62,13 @@ cp .env.example .env && nano .env
 #    - WEB_PORT (loopback, ej. 3020)  ·  DOMAIN  ·  APP_HOST=predictor.${DOMAIN}
 #    - DISCORD_WEBHOOK_URL=<tu webhook>
 
-# 4. Cert SSL del dominio: crea el snippet (si tu dominio no es example.com)
-cp nginx/snippets/ssl-example.com.conf nginx/snippets/ssl-<tudominio>.conf
-nano nginx/snippets/ssl-<tudominio>.conf   # ajusta rutas al Origin cert
-
-# 5. Clonar repos + renderizar Nginx del host
+# 4. Clonar repos + renderizar el server block de Nginx del host
+#    (el SSL del dominio es infra COMPARTIDA: debe existir ya en
+#     /etc/nginx/snippets/ssl-<dominio>.conf — lo instala el primer proyecto del
+#     dominio. bootstrap solo lo VERIFICA, no lo toca.)
 ./bootstrap.sh
 
-# 6. Construir y levantar worker + web
+# 5. Construir y levantar worker + web
 make deploy
 ```
 

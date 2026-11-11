@@ -45,15 +45,28 @@ clone() {  # $1=carpeta  $2=url  $3=rama
 clone engine "$ENGINE_REPO" "$ENGINE_BRANCH"
 clone ui     "$UI_REPO"     "$UI_BRANCH"
 
-# ── 5. Nginx del host: snippets compartidos + server block RENDERIZADO ────────
-# Precondición: el snippet SSL de la zona debe existir (el template hace `include ssl-${DOMAIN}.conf`).
-if [ ! -f "nginx/snippets/ssl-${DOMAIN}.conf" ]; then
-  echo "ERROR: falta nginx/snippets/ssl-${DOMAIN}.conf para DOMAIN=${DOMAIN}." >&2
-  echo "  Crea ese snippet + su Origin cert en /etc/ssl/cloudflare/${DOMAIN}/ (igual que en BooLend)." >&2
+# ── 5. Nginx del host: server block del predictor ────────────────────────────
+# Filosofía: los snippets SSL son INFRA COMPARTIDA del host (los instala el primer
+# proyecto del dominio, p.ej. BooLend). Este bootstrap NO los copia ni sobrescribe
+# para no pisar lo de otros proyectos: solo VERIFICA que existan. Lo único propio
+# del predictor es su server block (predictor.${DOMAIN}).
+sudo mkdir -p /etc/nginx/snippets
+
+# SSL del dominio: debe existir ya en el host (compartido). No lo tocamos.
+if [ ! -f "/etc/nginx/snippets/ssl-${DOMAIN}.conf" ]; then
+  echo "ERROR: falta /etc/nginx/snippets/ssl-${DOMAIN}.conf en el host." >&2
+  echo "  Es infra compartida del dominio ${DOMAIN} (la instala el primer proyecto)." >&2
+  echo "  Instálalo una vez (apuntando a /etc/ssl/cloudflare/${DOMAIN}/origin.{pem,key}) y reintenta." >&2
   exit 1
 fi
-sudo mkdir -p /etc/nginx/snippets
-sudo cp nginx/snippets/*.conf /etc/nginx/snippets/
+
+# proxy.conf: genérico (headers de reverse proxy). Lo instalamos solo si FALTA, nunca sobrescribe.
+if [ ! -f "/etc/nginx/snippets/proxy.conf" ]; then
+  echo "→ Instalando snippets/proxy.conf (no existía en el host)"
+  sudo cp nginx/snippets/proxy.conf /etc/nginx/snippets/proxy.conf
+fi
+
+# Server block del predictor (lo ÚNICO propio de este proyecto).
 envsubst '${APP_HOST} ${DOMAIN} ${WEB_PORT}' \
   < nginx/site.conf.template \
   | sudo tee "/etc/nginx/sites-available/${COMPOSE_PROJECT_NAME}.conf" >/dev/null
