@@ -17,9 +17,8 @@ services:
     build: ./worker
     profiles: ["manual"]              # no arranca con `up`; solo con `run --rm worker <tarea>`
     environment:
+      # Solo lo que VARÍA por entorno. ENGINE_DIR/DATA_DIR ya son ENV del Dockerfile.
       TZ: ${TZ:-UTC}
-      ENGINE_DIR: /engine
-      DATA_DIR: /data
       # Secreto del .env de ESTA carpeta (gitignored). Si falta, el worker registra pero no alerta.
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
     volumes:
