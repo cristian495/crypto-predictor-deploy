@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Ejecuta una tarea del worker (scan | resolve). Lo invoca cron.
-# Toda la config variable viene del entorno (inyectado por el compose / entrypoint).
+# Ejecuta UNA tarea del worker (scan | resolve | export) y termina.
+# Es el ENTRYPOINT del contenedor: se invoca con `docker compose run --rm worker <tarea>`
+# desde el cron del VPS. La config viene del entorno (inyectado por el compose desde el .env).
 set -euo pipefail
 
 ENGINE_DIR="${ENGINE_DIR:-/engine}"

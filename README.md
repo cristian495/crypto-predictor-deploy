@@ -2,15 +2,17 @@
 
 Despliega el stack de **Buy-the-Dip** (paper trading, no ejecuta órdenes):
 
-- **worker**: escanea la cesta cada hora (vela 1H), registra señales, alerta por
-  **Discord** y genera los JSON (backtest/señales/cartera) para la UI.
-- **web**: sirve la UI (Vite + Nginx) y esos JSON desde un **volumen compartido**
-  con el worker, siempre frescos.
+- **web**: sirve la UI (Vite + Nginx) y los JSON desde un **volumen compartido**,
+  siempre frescos. Corre 24/7 en Docker.
+- **worker**: contenedor **efímero**. No corre permanente; el **cron del VPS** lo
+  lanza para una tarea (scan/resolve/export), hace su trabajo y se apaga. Registra
+  señales, alerta por **Discord** y genera los JSON para la UI.
 
-Misma metodología que `boolend-deploy`: Docker + Makefile + `COMPOSE_PROJECT_NAME`,
-Nginx en el **host** (la web se publica solo en `127.0.0.1:<WEB_PORT>`), secretos en `.env`.
+Misma metodología que `boolend-deploy`: Docker + `COMPOSE_PROJECT_NAME`, Nginx en el
+**host** (la web se publica solo en `127.0.0.1:<WEB_PORT>`), secretos en `.env`.
+Operación por comandos manuales transparentes (ver [`COMMANDS.md`](COMMANDS.md)), sin Makefile.
 
-## Qué corre
+## Qué corre (lo programa el cron del VPS, ver COMMANDS.md §4)
 
 | Tarea | Cuándo | Qué hace |
 |---|---|---|
@@ -68,18 +70,24 @@ cp .env.example .env && nano .env
 #     dominio. bootstrap solo lo VERIFICA, no lo toca.)
 ./bootstrap.sh
 
-# 5. Construir y levantar worker + web
-docker compose up -d --build
+# 5. Levantar la web + generar los JSON por primera vez
+docker compose up -d --build web
+docker compose run --rm worker export     # datos para la UI
+docker compose run --rm worker scan       # primer escaneo + confirma Discord
+
+# 6. Programar el horario en el cron del VPS (ver COMMANDS.md §4)
+crontab -e
 ```
 
-Al arrancar, el worker hace un **scan inicial** + un **export inicial en background**
-(para que la UI tenga datos ya). La web queda en `https://${APP_HOST}`.
+La web queda en `https://${APP_HOST}`. El worker ya NO corre permanente: lo lanza
+el cron del VPS cada hora (scan), cada 6h (resolve) y 1×/día (export).
 
 ## Verificar
 
 ```bash
-docker compose ps                       # worker y web "Up"
-docker compose logs -f --tail=100       # actividad (scan + export)
+docker compose ps                       # la web "Up"
+docker compose logs -f --tail=100 web   # logs de la web
+tail -f ~/deploys/predictor/cron.log    # salida de las tareas del worker (cron)
 ```
 
 Abre `https://predictor.crelaris.com` → debe cargar con "Fuente activa: JSON real".

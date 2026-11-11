@@ -1,9 +1,11 @@
 # Comandos del deploy — predictor (worker + web)
 
-Copia-pega el comando que necesites. Todos son transparentes: no hay scripts que
-oculten lógica. Corre siempre **desde la carpeta del entorno** (ej. `~/deploys/predictor`).
+Copia-pega el comando que necesites. Todo es transparente, sin scripts que oculten
+lógica. Corre siempre **desde la carpeta del entorno**: `cd ~/deploys/predictor`
 
-Antes de empezar: `cd ~/deploys/predictor`
+**Modelo:** la **web** corre 24/7 en Docker. El **worker** es EFÍMERO: no corre
+permanente; se lanza, hace una tarea (scan/resolve/export) y se apaga. El **horario
+lo pone el cron del VPS** (sección 4), no un cron dentro del contenedor.
 
 ---
 
@@ -17,101 +19,133 @@ nano .env
 # Clona engine + ui y configura el nginx del host (verifica el SSL, no lo pisa)
 ./bootstrap.sh
 
-# Construye y levanta worker + web
-docker compose up -d --build
+# Levanta la WEB (24/7)
+docker compose up -d --build web
+
+# Genera los JSON para la UI por primera vez (sino la UI arranca en modo mock)
+docker compose run --rm worker export
+
+# Comprueba que Discord funciona
+docker compose run --rm worker scan
 ```
+
+Luego programa el cron del VPS (sección 4).
 
 ---
 
-## 2. Actualizar código (tras un nuevo commit en GitHub)
+## 2. Actualizar código (tras un commit en GitHub)
 
 ```bash
-# Traer el último código. Si cambiaste de rama en el .env, ajústala en el checkout.
+# Traer el último código
 git -C repos/engine pull --ff-only
 git -C repos/ui     pull --ff-only
 
-# Reconstruir y levantar todo (conserva el volumen de datos)
-docker compose up -d --build
+# Reconstruir la web (el worker se reconstruye solo la próxima vez que se invoque,
+# pero fuerza el rebuild si cambió el worker):
+docker compose up -d --build web
+docker compose build worker
 ```
 
-Solo un servicio (más rápido si solo cambió uno):
+Si actualizas el PROPIO deploy (este repo):
 
 ```bash
-# Solo el worker (cambió el engine)
-git -C repos/engine pull --ff-only && docker compose up -d --build worker
-
-# Solo la web (cambió la UI)
-git -C repos/ui pull --ff-only && docker compose up -d --build web
-```
-
-Si actualizas el PROPIO deploy (este repo: compose, nginx, etc.):
-
-```bash
-git pull                 # trae los cambios del deploy
-./bootstrap.sh           # re-renderiza el nginx del host si cambió el template
-docker compose up -d --build
+git pull
+./bootstrap.sh                 # re-renderiza el nginx si cambió el template
+docker compose up -d --build web
 ```
 
 ---
 
-## 3. Ver estado y logs
-
-```bash
-docker compose ps                          # worker y web: ¿Up?
-docker compose logs -f --tail=100          # logs de todo (Ctrl-C para salir)
-docker compose logs -f --tail=100 web      # solo la web
-docker compose logs -f --tail=100 worker   # solo el worker (scans, exports)
-```
-
----
-
-## 4. Tareas manuales del worker (forzar algo sin esperar al cron)
+## 3. Tareas del worker manualmente (forzar algo ahora)
 
 ```bash
 # Escanear señales AHORA (registra nuevas + alerta Discord)
-docker compose exec worker /app/run-task.sh scan
+docker compose run --rm worker scan
 
 # Resolver resultados AHORA (TP/SL/timeout de señales que maduraron)
-docker compose exec worker /app/run-task.sh resolve
+docker compose run --rm worker resolve
 
 # Regenerar los JSON de la UI AHORA (backtest/señales/cartera)
-docker compose exec worker /app/run-task.sh export
+docker compose run --rm worker export
+```
+
+`--rm` = el contenedor se borra al terminar (no deja basura). Cada tarea imprime su
+salida directamente en tu terminal.
+
+---
+
+## 4. Programar el horario (cron del VPS) — la clave
+
+Abre el crontab del VPS:
+
+```bash
+crontab -e
+```
+
+Y pega estas 3 líneas (ajusta la ruta si tu carpeta es otra). **Son transparentes:
+cada línea dice exactamente qué contenedor se lanza y cuándo.**
+
+```cron
+# --- predictor: señales Buy-the-Dip (paper trading) ---
+# scan: cada hora al minuto 2 (tras cerrar la vela 1H)
+2 * * * * cd ~/deploys/predictor && docker compose run --rm worker scan >> ~/deploys/predictor/cron.log 2>&1
+
+# resolve: cada 6 horas al minuto 20
+20 */6 * * * cd ~/deploys/predictor && docker compose run --rm worker resolve >> ~/deploys/predictor/cron.log 2>&1
+
+# export (JSON de la UI): 1 vez al día a las 03:30
+30 3 * * * cd ~/deploys/predictor && docker compose run --rm worker export >> ~/deploys/predictor/cron.log 2>&1
+```
+
+- `>> cron.log 2>&1` guarda la salida en un archivo para que puedas revisarla.
+- Para ver ese log: `tail -f ~/deploys/predictor/cron.log`
+- Para quitar las tareas: `crontab -e` y borra las líneas.
+
+---
+
+## 5. Ver estado y logs
+
+```bash
+docker compose ps                          # ¿la web está Up?
+docker compose logs -f --tail=100 web      # logs de la web
+tail -f ~/deploys/predictor/cron.log       # salida de las tareas del worker (cron)
 ```
 
 ---
 
-## 5. Comprobar que Discord funciona
+## 6. Comprobar Discord
 
 ```bash
-docker compose exec worker sh -c '. /etc/environment && cd "$ENGINE_DIR/buy_the_dip" && python live_signals.py --test-alert'
-```
-
-Debe imprimir `sent ✅` y llegar un mensaje a tu canal.
-
----
-
-## 6. Ver las señales acumuladas (paper trading)
-
-```bash
-# Últimas señales registradas
-docker compose exec worker sh -c 'tail -n 20 /data/live_signals.jsonl'
-
-# Resumen (win rate vivo vs backtest) — tras el primer resolve
-docker compose exec worker sh -c 'cat /data/live_summary.json'
+docker compose run --rm worker scan
+# o un mensaje de prueba directo:
+docker compose run --rm --entrypoint sh worker -c \
+  'cd "$ENGINE_DIR/buy_the_dip" && python live_signals.py --test-alert'
 ```
 
 ---
 
-## 7. Parar / arrancar / reiniciar
+## 7. Ver señales acumuladas (paper trading)
 
 ```bash
-docker compose restart          # reiniciar (no re-lee el .env)
-docker compose down             # parar (SIN -v → CONSERVA el log de señales)
-docker compose up -d            # arrancar de nuevo (sin rebuild)
+# Últimas señales registradas (desde la web, que monta el volumen)
+docker compose exec web sh -c 'tail -n 20 /usr/share/nginx/html/data/live_signals.jsonl'
+
+# Resumen vivo vs backtest (tras el primer resolve)
+docker compose exec web sh -c 'cat /usr/share/nginx/html/data/live_summary.json'
+```
+
+---
+
+## 8. Parar / arrancar la web
+
+```bash
+docker compose restart web      # reiniciar la web
+docker compose down             # parar la web (SIN -v → CONSERVA los datos)
+docker compose up -d web        # arrancar la web de nuevo
 ```
 
 > ⚠️ **Nunca** `docker compose down -v`: la `-v` borra el volumen con TODO el
-> historial de señales acumuladas (paper trading). Sin `-v` los datos se conservan.
+> historial de señales. Sin `-v`, los datos se conservan.
 
 ---
 
