@@ -2,7 +2,7 @@
 # Setup idempotente del stack predictor (worker + web) en un VPS.
 # TODO lo variable vive en .env — este script no hardcodea.
 # Clona/actualiza engine y ui en repos/, y renderiza el server block de Nginx del host.
-# NO levanta el stack (eso lo hace `make deploy`).
+# NO levanta el stack (eso lo haces tú con `docker compose up -d --build`).
 set -euo pipefail
 
 # ── 1. .env obligatorio ──────────────────────────────────────────────────────
@@ -77,4 +77,4 @@ echo "✓ Bootstrap listo — ${COMPOSE_PROJECT_NAME}"
 echo "  engine: $(git -C repos/engine rev-parse --short HEAD) (${ENGINE_BRANCH})"
 echo "  ui:     $(git -C repos/ui rev-parse --short HEAD) (${UI_BRANCH})"
 echo "  web:    https://${APP_HOST}"
-echo "  Siguiente:  make deploy"
+echo "  Siguiente:  docker compose up -d --build   (ver COMMANDS.md)"

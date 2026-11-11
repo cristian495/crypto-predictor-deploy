@@ -69,7 +69,7 @@ cp .env.example .env && nano .env
 ./bootstrap.sh
 
 # 5. Construir y levantar worker + web
-make deploy
+docker compose up -d --build
 ```
 
 Al arrancar, el worker hace un **scan inicial** + un **export inicial en background**
@@ -78,32 +78,30 @@ Al arrancar, el worker hace un **scan inicial** + un **export inicial en backgro
 ## Verificar
 
 ```bash
-make ps            # worker y web "Up"
-make logs          # actividad del worker (scan + export)
-make test-alert    # alerta de prueba a Discord
-make export        # regenerar los JSON de la UI ahora
+docker compose ps                       # worker y web "Up"
+docker compose logs -f --tail=100       # actividad (scan + export)
 ```
 
-Abre `https://predictor.tudominio.com` → debe cargar con "Fuente activa: JSON real".
+Abre `https://predictor.crelaris.com` → debe cargar con "Fuente activa: JSON real".
 
-## Actualizar código
+## Comandos de operación
+
+**Todos los comandos (desplegar, actualizar, logs, tareas, parar) están en
+[`COMMANDS.md`](COMMANDS.md)** — copia-pega el que necesites, sin scripts que
+oculten lógica. Resumen de los más usados:
 
 ```bash
-make deploy        # pull de engine+ui + rebuild + up
-make deploy-worker # solo el worker (nuevo commit del engine)
-make deploy-web    # solo la web (nuevo commit de la UI)
+# actualizar código
+git -C repos/engine pull --ff-only && git -C repos/ui pull --ff-only
+docker compose up -d --build
+
+# ver / operar
+docker compose ps
+docker compose logs -f --tail=100
+docker compose down          # parar (SIN -v → conserva datos)
 ```
 
-Cuando mergees el PR del engine a `main`, pon `ENGINE_BRANCH=main` en `.env` y `make deploy`.
-
-## Operación
-
-```bash
-make logs / logs-web   # seguir logs
-make tail-log          # señales acumuladas
-make scan / resolve    # forzar tareas
-make down / up         # parar / arrancar (conserva datos)
-```
+Cuando mergees cambios a `main`, basta con el `git ... pull` + `up -d --build` de arriba.
 
 ## Notas
 
